@@ -1,0 +1,67 @@
+# ワークフロー名：GitHub上でこの自動化処理を識別するための名前
+name: Claude Code
+
+# トリガー設定：どんなイベントが起きたらこのワークフローを実行するか
+on:
+  # イシューにコメントが投稿された時
+  issue_comment:
+    types: [created]  # 新規作成時のみ反応
+  
+  # プルリクエストのレビューコメントが投稿された時  
+  pull_request_review_comment:
+    types: [created]  # 新規作成時のみ反応
+  
+  # イシューが作成または割り当てられた時
+  issues:
+    types: [opened, assigned]  # 新規作成時と誰かに割り当てられた時
+  
+  # プルリクエストのレビューが提出された時
+  pull_request_review:
+    types: [submitted]  # レビュー提出時
+
+# 実際の処理内容を定義
+jobs:
+  claude:  # ジョブ名
+    # 実行条件：@claudeとメンションされた場合のみ実行
+    # 各イベントタイプごとに@claudeが含まれているかチェック
+    if: |
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+    
+    # 実行環境：Ubuntu最新版の仮想マシンを使用
+    runs-on: ubuntu-latest
+    
+    # セキュリティ権限：最小限の権限のみ付与
+    permissions:
+      # contents: read         # リポジトリ内容の読み取り権限
+      # pull-requests: read    # プルリクエストの読み取り権限
+      contents: write        # ← readからwriteに変更（コミット作成用）
+      pull-requests: write   # ← readからwriteに変更（PR作成用）
+      # issues: read          # イシューの読み取り権限
+      issues: write         # ← 追加（イシューへのコメント投稿用）
+      id-token: write       # 認証トークンの書き込み権限（API認証用）
+    
+    # 実行ステップ：順番に実行される処理
+    steps:
+      # ステップ1：リポジトリのコードをダウンロード
+      - name: Checkout repository
+        uses: actions/checkout@v4  # GitHub公式のチェックアウトアクション
+        with:
+          fetch-depth: 0  # 0に変更（全履歴取得でPR作成が安定）
+      
+      # ステップ2：Claude Codeを実行
+      - name: Run Claude Code
+        id: claude  # このステップのID（他ステップから参照可能）
+        uses: anthropics/claude-code-action@beta  # AnthropicのClaude Code Action
+        with:
+          # API認証キー：GitHubのSecrets機能で安全に管理
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+
+          # GitHub Token
+          github_token: ${{ secrets.GITHUB_TOKEN }} 
+          allowed_tools: "Bash(git:*),View,GlobTool,GrepTool"
+          
+          # 使用するClaudeモデル
+          model: "claude-opus-4-20250514"
